@@ -24,6 +24,10 @@ def health():
 @app.route('/api/generate-image', methods=['POST'])
 def generate_image():
     try:
+        import base64
+        from PIL import Image
+        import io
+        
         data = request.get_json()
         payload = data.get('payload')
         
@@ -48,12 +52,9 @@ def generate_image():
                 elif 'inlineData' in part:
                     # 이미지 데이터 처리
                     inline_data = part['inlineData']
-                    import base64
-                    image_data = base64.b64decode(inline_data['data'])
-                    gemini_contents.append({
-                        'mime_type': inline_data['mimeType'],
-                        'data': image_data
-                    })
+                    image_bytes = base64.b64decode(inline_data['data'])
+                    image = Image.open(io.BytesIO(image_bytes))
+                    gemini_contents.append(image)
         
         # Gemini API 호출
         response = model.generate_content(gemini_contents)
@@ -70,6 +71,9 @@ def generate_image():
         })
         
     except Exception as e:
+        import traceback
+        print(f"오류 발생: {str(e)}")
+        print(traceback.format_exc())
         return jsonify({
             "error": {
                 "message": str(e),
