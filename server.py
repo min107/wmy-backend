@@ -23,11 +23,10 @@ def health():
 
 @app.route('/api/generate-image', methods=['POST'])
 def generate_image():
+    import base64
+    import io
+    
     try:
-        import base64
-        from PIL import Image
-        import io
-        
         data = request.get_json()
         payload = data.get('payload')
         
@@ -44,6 +43,8 @@ def generate_image():
         
         # contents를 Gemini API 형식으로 변환
         gemini_contents = []
+        has_image = False
+        
         for content in contents:
             parts = content.get('parts', [])
             for part in parts:
@@ -51,19 +52,40 @@ def generate_image():
                     gemini_contents.append(part['text'])
                 elif 'inlineData' in part:
                     # 이미지 데이터 처리
-                    inline_data = part['inlineData']
-                    image_bytes = base64.b64decode(inline_data['data'])
-                    image = Image.open(io.BytesIO(image_bytes))
-                    gemini_contents.append(image)
+                    has_image = True
+                    try:
+                        from PIL import Image
+                        inline_data = part['inlineData']
+                        image_bytes = base64.b64decode(inline_data['data'])
+                        image = Image.open(io.BytesIO(image_bytes))
+                        gemini_contents.append(image)
+                    except Exception as img_error:
+                        print(f"이미지 처리 오류: {str(img_error)}")
+                        return jsonify({
+                            "error": {
+                                "message": f"이미지 처리 실패: {str(img_error)}",
+                                "details": "이미지 데이터를 처리할 수 없습니다"
+                            }
+                        }), 400
         
         # Gemini API 호출
-        response = model.generate_content(gemini_contents)
+        try:
+            response = model.generate_content(gemini_contents)
+            response_text = response.text
+        except Exception as api_error:
+            print(f"Gemini API 오류: {str(api_error)}")
+            return jsonify({
+                "error": {
+                    "message": f"API 호출 실패: {str(api_error)}",
+                    "details": "Gemini API 호출 중 오류가 발생했습니다"
+                }
+            }), 500
         
         return jsonify({
             "candidates": [{
                 "content": {
                     "parts": [{
-                        "text": response.text
+                        "text": response_text
                     }],
                     "role": "model"
                 }
@@ -72,12 +94,14 @@ def generate_image():
         
     except Exception as e:
         import traceback
-        print(f"오류 발생: {str(e)}")
-        print(traceback.format_exc())
+        error_trace = traceback.format_exc()
+        print(f"전체 오류: {str(e)}")
+        print(error_trace)
         return jsonify({
             "error": {
                 "message": str(e),
-                "details": "이미지 생성 중 오류가 발생했습니다"
+                "details": "이미지 생성 중 오류가 발생했습니다",
+                "trace": error_trace[:500]  # 처음 500자만
             }
         }), 500
 
